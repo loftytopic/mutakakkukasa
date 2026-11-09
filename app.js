@@ -5,16 +5,95 @@ const STORAGE_KEY = "mutakakkukasa-v3";
 const ADD_ONLY_NAMES = new Set(["joni"]);
 const DEBT_FRIEND_NAME = "joni";
 const DELIVERY_ADDRESS_EDITORS = new Set(["aapo", "jaakko"]);
+const FLAVORS = [
+  { id: "perus", label: "Perus" },
+  { id: "minttu", label: "Minttu" },
+  { id: "appelsiini", label: "Appelsiini" },
+];
+const FLAVOR_IDS = FLAVORS.map((f) => f.id);
+const LOCAL_FLAVOR_KEY = "mutakakkukasa-selected-flavor";
+
+/** Ravintoarvoilmoitus / 100 g (pakkausmerkintä). */
+const NUTRITION_PER_100G = {
+  energyKj: 1606,
+  energyKcal: 381,
+  fatG: 15,
+  saturatedFatG: 2,
+  carbsG: 56,
+  sugarsG: 41,
+  proteinG: 5,
+  saltG: 0.45,
+};
+const DEFAULT_GRAMS_PER_PACKAGE = 100;
+
+const defaultFlavorCm = () => ({ perus: 0, minttu: 0, appelsiini: 0 });
 
 const defaultState = () => ({
   names: ["Aapo", "Joni", "Jaakko"],
   debtFriendIndex: 0,
   activeUserIndex: 1,
   sharedDebtCm: 0,
+  flavorCm: defaultFlavorCm(),
   wolttaLog: [],
   deliveryAddress: "",
   canWoltta: [true, true, false],
+  gramsPerPackage: DEFAULT_GRAMS_PER_PACKAGE,
 });
+
+let selectedFlavor = "perus";
+
+function flavorLabel(id) {
+  return FLAVORS.find((f) => f.id === id)?.label ?? id;
+}
+
+function normalizeFlavorCm(raw, fallbackTotal = 0) {
+  const base = defaultFlavorCm();
+  if (raw && typeof raw === "object") {
+    for (const id of FLAVOR_IDS) {
+      const n = Number(raw[id]);
+      base[id] = Number.isFinite(n) ? Math.max(0, n) : 0;
+    }
+    return base;
+  }
+  base.perus = Math.max(0, fallbackTotal);
+  return base;
+}
+
+function totalDebtCm(flavorCm = state.flavorCm) {
+  return FLAVOR_IDS.reduce((sum, id) => sum + (flavorCm[id] ?? 0), 0);
+}
+
+function syncSharedDebtFromFlavors() {
+  state.sharedDebtCm = Math.round(totalDebtCm() * 100) / 100;
+}
+
+function loadSelectedFlavor() {
+  const saved = localStorage.getItem(LOCAL_FLAVOR_KEY);
+  if (saved && FLAVOR_IDS.includes(saved)) selectedFlavor = saved;
+}
+
+function setSelectedFlavor(id) {
+  if (!FLAVOR_IDS.includes(id)) return;
+  selectedFlavor = id;
+  localStorage.setItem(LOCAL_FLAVOR_KEY, id);
+  syncFlavorPickerUi();
+}
+
+function syncFlavorPickerUi() {
+  document.querySelectorAll("[data-flavor-option]").forEach((btn) => {
+    const active = btn.dataset.flavorOption === selectedFlavor;
+    btn.classList.toggle("is-selected", active);
+    btn.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+}
+
+function initFlavorPickers() {
+  document.querySelectorAll("[data-flavor-option]").forEach((btn) => {
+    btn.addEventListener("click", () => setSelectedFlavor(btn.dataset.flavorOption));
+  });
+  loadSelectedFlavor();
+  syncFlavorPickerUi();
+}
 
 function loadState() {
   try {
@@ -43,14 +122,21 @@ function normalizeState(parsed) {
   canWoltta = [0, 1, 2].map((i) => Boolean(canWoltta[i]));
 
   const names = (parsed.names ?? defaultState().names).slice(0, USER_COUNT);
+  const flavorCm = normalizeFlavorCm(parsed.flavorCm, sharedDebtCm);
+  const sharedFromFlavors = totalDebtCm(flavorCm);
 
   return {
     names,
     debtFriendIndex: indexOfDebtFriend(names),
-    sharedDebtCm: Math.max(0, sharedDebtCm),
+    flavorCm,
+    sharedDebtCm: Math.max(0, sharedFromFlavors || sharedDebtCm),
     wolttaLog: Array.isArray(parsed.wolttaLog) ? parsed.wolttaLog.slice(-20) : [],
     deliveryAddress: typeof parsed.deliveryAddress === "string" ? parsed.deliveryAddress : "",
     canWoltta,
+    gramsPerPackage:
+      Number.isFinite(parsed.gramsPerPackage) && parsed.gramsPerPackage > 0
+        ? parsed.gramsPerPackage
+        : DEFAULT_GRAMS_PER_PACKAGE,
     activeUserIndex:
       Number.isFinite(parsed.activeUserIndex) && parsed.activeUserIndex >= 0
         ? parsed.activeUserIndex % USER_COUNT
@@ -104,7 +190,12 @@ let seededCloud = false;
 
 function isFirebaseConfigured() {
   const cfg = window.FIREBASE_CONFIG;
-  return Boolean(cfg?.apiKey && cfg.apiKey !== "YOUR_API_KEY" && cfg.databaseURL);
+  return Boolean(
+    cfg?.apiKey &&
+      cfg.apiKey !== "YOUR_API_KEY" &&
+      cfg.databaseURL &&
+      !String(cfg.databaseURL).includes("YOUR_PROJECT")
+  );
 }
 
 function stateForCloud() {
@@ -117,10 +208,12 @@ function mergeCloudIntoState(cloud) {
   const merged = normalizeState({ ...cloud, activeUserIndex: keepActive });
   state.names = merged.names;
   state.debtFriendIndex = merged.debtFriendIndex;
+  state.flavorCm = merged.flavorCm;
   state.sharedDebtCm = merged.sharedDebtCm;
   state.wolttaLog = merged.wolttaLog;
   state.deliveryAddress = merged.deliveryAddress;
   state.canWoltta = merged.canWoltta;
+  state.gramsPerPackage = merged.gramsPerPackage;
 }
 
 function refreshUiFromState() {
@@ -177,7 +270,7 @@ function initFirebase() {
         if (cloud === null) {
           if (!seededCloud) {
             seededCloud = true;
-            dbRef.set(stateForCloud()).catch(() => setSyncStatus("online", "aloitustallennus epäonnistui"));
+            dbRef.set(stateForCloud()).catch(() => setSyncStatus("online", "aloitustallennus epäonnistui — tarkista säännöt"));
           }
           return;
         }
@@ -187,7 +280,14 @@ function initFirebase() {
         applyingRemote = false;
         refreshUiFromState();
       },
-      () => setSyncStatus("online", "yhteys katkesi")
+      (err) => {
+        const code = err?.code ?? "";
+        if (code === "PERMISSION_DENIED") {
+          setSyncStatus("offline", "Realtime DB estää luvan — julkaise database.rules.json");
+        } else {
+          setSyncStatus("online", "yhteys katkesi");
+        }
+      }
     );
 
     firebaseReady = true;
@@ -208,6 +308,10 @@ const els = {
   debtorsLabel: document.getElementById("debtors-label"),
   totalReceivable: document.getElementById("total-receivable"),
   sharedDebtCm: document.getElementById("shared-debt-cm"),
+  flavorDebtBody: document.getElementById("flavor-debt-body"),
+  nutritionBody: document.getElementById("nutrition-body"),
+  nutritionSub: document.getElementById("nutrition-sub"),
+  gramsPerPackage: document.getElementById("grams-per-package"),
   statSharedPackages: document.getElementById("stat-shared-packages"),
   stackHeight: document.getElementById("stack-height"),
   statPackages: document.getElementById("stat-packages"),
@@ -255,6 +359,76 @@ function formatPackages(n) {
   if (n === null) return "—";
   const rounded = Math.round(n * 100) / 100;
   return `${formatNumber(rounded, rounded % 1 ? 2 : 0)} kpl`;
+}
+
+function formatGrams(g) {
+  const rounded = Math.round(g * 10) / 10;
+  return `${formatNumber(rounded, rounded % 1 ? 1 : 0)} g`;
+}
+
+function totalDebtGrams() {
+  const packs = packagesFromCm(state.sharedDebtCm);
+  if (packs === null || !state.gramsPerPackage) return 0;
+  return packs * state.gramsPerPackage;
+}
+
+function nutritionForGrams(grams) {
+  if (grams <= 0) return null;
+  const factor = grams / 100;
+  return {
+    energyKj: NUTRITION_PER_100G.energyKj * factor,
+    energyKcal: NUTRITION_PER_100G.energyKcal * factor,
+    fatG: NUTRITION_PER_100G.fatG * factor,
+    saturatedFatG: NUTRITION_PER_100G.saturatedFatG * factor,
+    carbsG: NUTRITION_PER_100G.carbsG * factor,
+    sugarsG: NUTRITION_PER_100G.sugarsG * factor,
+    proteinG: NUTRITION_PER_100G.proteinG * factor,
+    saltG: NUTRITION_PER_100G.saltG * factor,
+  };
+}
+
+function renderNutrition() {
+  if (!els.nutritionBody) return;
+  const grams = totalDebtGrams();
+  const n = nutritionForGrams(grams);
+
+  if (els.nutritionSub) {
+    const packs = formatPackages(packagesFromCm(state.sharedDebtCm));
+    els.nutritionSub.textContent =
+      grams > 0
+        ? `Laskettu: ${packs} × ${formatGrams(state.gramsPerPackage)} = ${formatGrams(grams)} (perustuu 100 g arvoon)`
+        : "Ei velkaa — ei ravintoa.";
+  }
+
+  if (!n) {
+    els.nutritionBody.replaceChildren();
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td colspan="2" class="muted">—</td>`;
+    els.nutritionBody.appendChild(tr);
+    return;
+  }
+
+  const rows = [
+    ["Energia", `${formatNumber(Math.round(n.energyKj), 0)} kJ / ${formatNumber(Math.round(n.energyKcal), 0)} kcal`],
+    ["Rasvaa", `${formatNumber(Math.round(n.fatG * 10) / 10, 1)} g`],
+    ["- josta tyydyttyneitä rasvoja", `${formatNumber(Math.round(n.saturatedFatG * 10) / 10, 1)} g`],
+    ["Hiilihydraattia", `${formatNumber(Math.round(n.carbsG * 10) / 10, 1)} g`],
+    ["- josta sokereita", `${formatNumber(Math.round(n.sugarsG * 10) / 10, 1)} g`],
+    ["Proteiinia", `${formatNumber(Math.round(n.proteinG * 10) / 10, 1)} g`],
+    ["Suola", `${formatNumber(Math.round(n.saltG * 100) / 100, 2)} g`],
+  ];
+
+  els.nutritionBody.replaceChildren(
+    ...rows.map(([label, val]) => {
+      const tr = document.createElement("tr");
+      const sub = label.startsWith("-");
+      tr.innerHTML = `
+        <td class="${sub ? "nutrition-sub" : ""}">${label}</td>
+        <td class="num">${val}</td>
+      `;
+      return tr;
+    })
+  );
 }
 
 function setError(message) {
@@ -313,7 +487,7 @@ function applyAddOnlyUi() {
 
   els.btnClearStack.hidden = on;
   els.btnReset.hidden = on;
-  els.sharedDebtCm.readOnly = on;
+  els.sharedDebtCm.readOnly = true;
   els.stackHeight.readOnly = on;
   if (els.txModeWolttaWrap) els.txModeWolttaWrap.hidden = on;
 
@@ -476,6 +650,10 @@ function syncInputsFromState() {
     els.names[i].value = name;
   });
   els.deliveryAddress.value = state.deliveryAddress;
+  if (els.gramsPerPackage) {
+    els.gramsPerPackage.value = String(state.gramsPerPackage);
+    els.gramsPerPackage.readOnly = isAddOnlyUser();
+  }
   fillDebtFriendSelect();
   fillSelect(els.activeUserIndex, state.names, state.activeUserIndex);
   renderWolttaFlags();
@@ -488,12 +666,53 @@ function renderSharedDebt() {
   const friend = debtFriendName();
   const debtors = debtorIndices().map((i) => state.names[i]);
 
+  syncSharedDebtFromFlavors();
+
   els.debtFriendLabel.textContent = `Velkakaveri: ${friend}`;
   els.debtorsLabel.textContent = `Yhteisvelalliset: ${debtors.join(" ja ")}`;
 
   els.sharedDebtCm.value = String(state.sharedDebtCm);
   const packs = packagesFromCm(state.sharedDebtCm);
   els.statSharedPackages.textContent = formatPackages(packs);
+
+  if (els.flavorDebtBody) {
+    const readonly = isAddOnlyUser();
+    els.flavorDebtBody.replaceChildren(
+      ...FLAVORS.map(({ id, label }) => {
+        const cm = state.flavorCm[id] ?? 0;
+        const tr = document.createElement("tr");
+        if (readonly) {
+          tr.innerHTML = `
+            <td>${label}</td>
+            <td class="num">${formatCm(cm)}</td>
+            <td class="num scaled">${formatPackages(packagesFromCm(cm))}</td>
+          `;
+        } else {
+          tr.innerHTML = `
+            <td>${label}</td>
+            <td class="num">
+              <input type="number" class="cell-input flavor-cm-input" data-flavor="${id}" step="0.1" min="0" value="${cm}" aria-label="${label} velka cm" />
+            </td>
+            <td class="num scaled">${formatPackages(packagesFromCm(cm))}</td>
+          `;
+        }
+        return tr;
+      })
+    );
+
+    if (!readonly) {
+      els.flavorDebtBody.querySelectorAll(".flavor-cm-input").forEach((input) => {
+        input.addEventListener("change", () => {
+          const id = input.dataset.flavor;
+          const val = parseCm(input.value);
+          state.flavorCm[id] = val !== null ? Math.max(0, val) : 0;
+          syncSharedDebtFromFlavors();
+          saveState();
+          renderSharedDebt();
+        });
+      });
+    }
+  }
 
   if (state.sharedDebtCm > 0) {
     els.totalReceivable.hidden = false;
@@ -502,6 +721,8 @@ function renderSharedDebt() {
     els.totalReceivable.hidden = true;
     els.totalReceivable.textContent = "";
   }
+
+  renderNutrition();
 }
 
 function renderWolttaLog() {
@@ -519,7 +740,8 @@ function renderWolttaLog() {
       .map((entry) => {
         const li = document.createElement("li");
         const who = state.names[entry.whoIndex] ?? "—";
-        li.textContent = `${who} wolttasi ${formatCm(entry.cm)} (${formatPackages(packagesFromCm(entry.cm))})`;
+        const flavor = entry.flavor ? ` · ${flavorLabel(entry.flavor)}` : "";
+        li.textContent = `${who} wolttasi ${formatCm(entry.cm)} (${formatPackages(packagesFromCm(entry.cm))})${flavor}`;
         return li;
       })
   );
@@ -574,8 +796,12 @@ function validateWoltta(whoIdx, woltta) {
     return "Tällä kaverilla ei ole lupaa wolttaa.";
   }
 
+  const flavorDebt = state.flavorCm[selectedFlavor] ?? 0;
+  if (woltta > flavorDebt) {
+    return `${flavorLabel(selectedFlavor)}: max ${formatCm(flavorDebt)} tällä hetkellä.`;
+  }
   if (woltta > state.sharedDebtCm) {
-    return `Woltta (${formatCm(woltta)}) on suurempi kuin velka (${formatCm(state.sharedDebtCm)}).`;
+    return `Woltta (${formatCm(woltta)}) on suurempi kuin kokonaisvelka (${formatCm(state.sharedDebtCm)}).`;
   }
 
   if (whoIdx === state.debtFriendIndex) {
@@ -602,7 +828,8 @@ function applyTransaction() {
       return;
     }
     setError("");
-    state.sharedDebtCm += add;
+    state.flavorCm[selectedFlavor] = (state.flavorCm[selectedFlavor] ?? 0) + add;
+    syncSharedDebtFromFlavors();
     els.txAddCm.value = "";
     saveState();
     renderSharedDebt();
@@ -634,8 +861,10 @@ function applyTransaction() {
   }
 
   setError("");
-  state.sharedDebtCm = Math.max(0, state.sharedDebtCm - woltta);
-  state.wolttaLog.push({ whoIndex: whoIdx, cm: woltta, at: Date.now() });
+  const flavorDebt = state.flavorCm[selectedFlavor] ?? 0;
+  state.flavorCm[selectedFlavor] = Math.max(0, flavorDebt - woltta);
+  syncSharedDebtFromFlavors();
+  state.wolttaLog.push({ whoIndex: whoIdx, cm: woltta, flavor: selectedFlavor, at: Date.now() });
   if (state.wolttaLog.length > 20) state.wolttaLog = state.wolttaLog.slice(-20);
 
   els.txWolttaCm.value = "";
@@ -652,7 +881,8 @@ function resetDebts() {
     return;
   }
   if (!confirm("Nollataanko yhteinen velka ja wolttahistoria?")) return;
-  state.sharedDebtCm = 0;
+  state.flavorCm = defaultFlavorCm();
+  syncSharedDebtFromFlavors();
   state.wolttaLog = [];
   saveState();
   renderSharedDebt();
@@ -706,21 +936,15 @@ els.deliveryAddress.addEventListener("input", () => {
   renderDeliveryAddress();
 });
 
-els.sharedDebtCm.addEventListener("change", () => {
-  const val = parseCm(els.sharedDebtCm.value);
-  if (val === null) {
+if (els.gramsPerPackage) {
+  els.gramsPerPackage.addEventListener("change", () => {
+    if (isAddOnlyUser()) return;
+    const n = Number.parseFloat(String(els.gramsPerPackage.value).replace(",", "."));
+    state.gramsPerPackage = Number.isFinite(n) && n > 0 ? n : DEFAULT_GRAMS_PER_PACKAGE;
+    saveState();
     renderSharedDebt();
-    return;
-  }
-  if (isAddOnlyUser() && val < state.sharedDebtCm) {
-    setError("Joni voi vain lisätä velkaa — ei pienentää käsin.");
-    renderSharedDebt();
-    return;
-  }
-  state.sharedDebtCm = Math.max(0, val);
-  saveState();
-  renderSharedDebt();
-});
+  });
+}
 
 els.txWolttaUser.addEventListener("change", updateWolttaHint);
 
@@ -745,6 +969,7 @@ if (userSetFromUrl || userSetFromDevice) {
 }
 
 initFirebase();
+initFlavorPickers();
 syncInputsFromState();
 syncTxPanels();
 renderSharedDebt();

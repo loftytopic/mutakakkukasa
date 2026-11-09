@@ -50,6 +50,11 @@
               <textarea id="delivery-address" rows="3" placeholder="Katu, postinumero, kaupunki…"></textarea>
             </label>
             <p class="hint">Muokata voi vain Aapo ja Jaakko (<strong>Kuka olet?</strong>).</p>
+            <label class="field">
+              <span>1 paketti painaa (g)</span>
+              <input type="number" id="grams-per-package" min="1" step="1" value="100" />
+            </label>
+            <p class="hint">Ravinto: pakkausmerkintä / 100 g × pakettimäärä.</p>
           </fieldset>
 
           <fieldset class="fieldset">
@@ -82,9 +87,9 @@
 
         <dl class="stats shared-debt">
           <div class="stat-highlight">
-            <dt>Velka (sentti / cm)</dt>
+            <dt>Yhteensä (sentti / cm)</dt>
             <dd class="shared-input-wrap">
-              <input type="number" id="shared-debt-cm" class="shared-debt-input" step="0.1" min="0" aria-label="Yhteinen velka cm" />
+              <input type="number" id="shared-debt-cm" class="shared-debt-input" step="0.1" min="0" readonly aria-label="Yhteinen velka cm" />
             </dd>
           </div>
           <div>
@@ -92,6 +97,24 @@
             <dd id="stat-shared-packages" class="scaled-text">—</dd>
           </div>
         </dl>
+        <table class="ingredients flavor-table">
+          <thead>
+            <tr>
+              <th scope="col">Maku</th>
+              <th scope="col" class="num">Velka (cm)</th>
+              <th scope="col" class="num">Paketit</th>
+            </tr>
+          </thead>
+          <tbody id="flavor-debt-body"></tbody>
+        </table>
+
+        <div class="nutrition-block">
+          <h3 class="nutrition-title">Kokonaisvelan ravintosisältö</h3>
+          <p class="hint" id="nutrition-sub">—</p>
+          <table class="ingredients nutrition-table">
+            <tbody id="nutrition-body"></tbody>
+          </table>
+        </div>
 
         <p id="error-message" class="error hidden" role="alert"></p>
         <div class="actions">
@@ -101,6 +124,12 @@
 
       <section class="card" aria-labelledby="mitta-otsikko">
         <h2 id="mitta-otsikko">Mittauslaskuri</h2>
+        <p class="hint block">Valitse maku kirjausta varten.</p>
+        <div class="flavor-modes" role="group" aria-label="Kakkumaku">
+          <button type="button" class="flavor-option is-selected" data-flavor-option="perus">Perus</button>
+          <button type="button" class="flavor-option" data-flavor-option="minttu">Minttu</button>
+          <button type="button" class="flavor-option" data-flavor-option="appelsiini">Appelsiini</button>
+        </div>
         <p class="hint block">Yksi painallus = yksi paketti (2,5 cm). Korkeus ÷ 2,5 = pakettimäärä.</p>
         <label class="field">
           <span>Pinon korkeus (sentti, cm)</span>
@@ -120,6 +149,13 @@
 
       <section class="card" aria-labelledby="tapahtuma-otsikko">
         <h2 id="tapahtuma-otsikko">Kirjaa tapahtuma</h2>
+
+        <p class="hint block">Kakkumaku tälle kirjaukselle:</p>
+        <div class="flavor-modes" role="group" aria-label="Kakkumaku tapahtumalle">
+          <button type="button" class="flavor-option is-selected" data-flavor-option="perus">Perus</button>
+          <button type="button" class="flavor-option" data-flavor-option="minttu">Minttu</button>
+          <button type="button" class="flavor-option" data-flavor-option="appelsiini">Appelsiini</button>
+        </div>
 
         <div class="tx-modes" role="radiogroup" aria-label="Tapahtumatyyppi">
           <label class="chip">

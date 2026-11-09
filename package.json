@@ -1,0 +1,11 @@
+{
+  "name": "mutakakkukasa",
+  "private": true,
+  "scripts": {
+    "firebase:rtdb": "node scripts/setup-rtdb.cjs",
+    "firebase:deploy-rules": "firebase deploy --only database --project mutakakkukasa"
+  },
+  "devDependencies": {
+    "firebase-tools": "^15.35.0"
+  }
+}
