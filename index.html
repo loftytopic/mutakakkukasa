@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kasa — mutakakut & velat</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=DM+Serif+Display&display=swap" rel="stylesheet" />
+</head>
+<body>
+  <div class="app">
+    <header class="hero">
+      <p class="eyebrow">Kasanlaskenta ja velanmaksu</p>
+      <h1>Mutakakkukasa</h1>
+    </header>
+
+    <main class="grid">
+      <section class="card card-wide" id="settings-section" aria-labelledby="asetukset-otsikko">
+        <h2 id="asetukset-otsikko">Asetukset</h2>
+        <div class="settings-grid settings-grid--two">
+          <fieldset class="fieldset">
+            <legend>Käyttäjät (3 kpl)</legend>
+            <div class="names">
+              <label class="field">
+                <span>Kaveri 1</span>
+                <input type="text" id="name-0" maxlength="40" autocomplete="off" />
+              </label>
+              <label class="field">
+                <span>Kaveri 2</span>
+                <input type="text" id="name-1" maxlength="40" autocomplete="off" />
+              </label>
+              <label class="field">
+                <span>Kaveri 3</span>
+                <input type="text" id="name-2" maxlength="40" autocomplete="off" />
+              </label>
+            </div>
+          </fieldset>
+
+          <fieldset class="fieldset">
+            <legend>Velkakaveri</legend>
+            <p class="hint block">Velkaa voi olla vain <strong>Joni</strong>lle. Pudotusvalikosta valinta (käytännössä ainoa vaihtoehto).</p>
+            <label class="field">
+              <span>Kenelle velkaa?</span>
+              <select id="debt-friend-index"></select>
+            </label>
+            <label class="field">
+              <span>Toimitusosoite (wolttareille)</span>
+              <textarea id="delivery-address" rows="3" placeholder="Katu, postinumero, kaupunki…"></textarea>
+            </label>
+            <p class="hint">Muokata voi vain Aapo ja Jaakko (<strong>Kuka olet?</strong>).</p>
+          </fieldset>
+
+          <fieldset class="fieldset">
+            <legend>Kuka olet?</legend>
+            <p class="hint block"><strong>iPhone (iOS)</strong> → Joni automaattisesti. <strong>Android</strong> (Aapo &amp; Jaakko): valitse listasta tai kirjanmerkki <code class="inline-code">?kuka=aapo</code> / <code class="inline-code">?kuka=jaakko</code>. Joni voi vain lisätä.</p>
+            <label class="field">
+              <span>Käyttäjä nyt</span>
+              <select id="active-user-index"></select>
+            </label>
+            <p class="preview" id="role-hint" hidden></p>
+          </fieldset>
+
+          <fieldset class="fieldset">
+            <legend>Kuka voi wolttaa?</legend>
+            <p class="hint block">Ei kaikki pakosti — valitse ketkä voivat lyhentää velkaa.</p>
+            <div class="woltta-flags" id="woltta-flags"></div>
+          </fieldset>
+        </div>
+      </section>
+
+      <section class="card card-wide" aria-labelledby="velat-otsikko">
+        <div class="card-header row-between">
+          <div>
+            <h2 id="velat-otsikko">Yhteinen velka</h2>
+            <p class="muted" id="debt-friend-label">—</p>
+            <p class="muted" id="debtors-label">—</p>
+          </div>
+          <p class="total-badge" id="total-receivable" hidden></p>
+        </div>
+
+        <dl class="stats shared-debt">
+          <div class="stat-highlight">
+            <dt>Velka (sentti / cm)</dt>
+            <dd class="shared-input-wrap">
+              <input type="number" id="shared-debt-cm" class="shared-debt-input" step="0.1" min="0" aria-label="Yhteinen velka cm" />
+            </dd>
+          </div>
+          <div>
+            <dt>Mutakakkuja</dt>
+            <dd id="stat-shared-packages" class="scaled-text">—</dd>
+          </div>
+        </dl>
+
+        <p id="error-message" class="error hidden" role="alert"></p>
+        <div class="actions">
+          <button type="button" class="btn ghost" id="btn-reset">Nollaa velka</button>
+        </div>
+      </section>
+
+      <section class="card" aria-labelledby="mitta-otsikko">
+        <h2 id="mitta-otsikko">Mittauslaskuri</h2>
+        <p class="hint block">Yksi painallus = yksi paketti (2,5 cm). Korkeus ÷ 2,5 = pakettimäärä.</p>
+        <label class="field">
+          <span>Pinon korkeus (sentti, cm)</span>
+          <input type="number" id="stack-height" min="0" step="0.1" value="0" />
+        </label>
+        <div class="actions actions--tight">
+          <button type="button" class="btn primary" id="btn-add-package">+ 1 paketti (2,5 cm)</button>
+          <button type="button" class="btn ghost" id="btn-clear-stack">Tyhjennä pino</button>
+        </div>
+        <dl class="stats compact">
+          <div class="stat-highlight">
+            <dt>Paketteja</dt>
+            <dd id="stat-packages">—</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section class="card" aria-labelledby="tapahtuma-otsikko">
+        <h2 id="tapahtuma-otsikko">Kirjaa tapahtuma</h2>
+
+        <div class="tx-modes" role="radiogroup" aria-label="Tapahtumatyyppi">
+          <label class="chip">
+            <input type="radio" name="tx-mode" value="add" checked />
+            Lisää velkaa
+          </label>
+          <label class="chip" id="tx-mode-woltta-wrap">
+            <input type="radio" name="tx-mode" value="woltta" />
+            Woltta
+          </label>
+        </div>
+
+        <div id="tx-panel-add">
+          <label class="field">
+            <span>Lisättävä velka (sentti, cm)</span>
+            <input type="number" id="tx-add-cm" step="0.1" min="0.1" placeholder="esim. 10" />
+          </label>
+          <p class="hint">Kasvattaa yhteistä velkaa (esim. uusi pino kasaan).</p>
+        </div>
+
+        <div id="tx-panel-woltta" class="hidden">
+          <label class="field">
+            <span>Kuka wolttaa?</span>
+            <select id="tx-woltta-user"></select>
+          </label>
+          <label class="field">
+            <span>Woltta (sentti, cm)</span>
+            <input type="number" id="tx-woltta-cm" step="0.1" min="0.1" placeholder="esim. 7,5" />
+          </label>
+          <p class="hint" id="woltta-hint">Lyhentää yhteistä velkaa. 7,5 cm = 3 pakettia.</p>
+          <div class="delivery-box" id="delivery-box">
+            <p class="delivery-label">Toimitusosoite wolttajalle</p>
+            <p class="delivery-text" id="delivery-text">—</p>
+            <button type="button" class="btn ghost btn-sm" id="btn-copy-address">Kopioi osoite</button>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button type="button" class="btn primary" id="btn-apply-tx">Tallenna</button>
+        </div>
+
+        <ul class="woltta-log" id="woltta-log" hidden></ul>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <p>Mutakakkuja = velka (cm) ÷ 2,5. Woltta vähentää koko yhteistä velkaa — kuka wolttaa kirjataan muistiin.</p>
+      <p id="sync-status" class="sync-status" aria-live="polite">Synkronointi: …</p>
+    </footer>
+  </div>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
+  <script src="firebase-config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
