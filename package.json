@@ -3,7 +3,13 @@
   "private": true,
   "scripts": {
     "firebase:rtdb": "node scripts/setup-rtdb.cjs",
-    "firebase:deploy-rules": "firebase deploy --only database --project mutakakkukasa"
+    "firebase:deploy-rules": "firebase deploy --only database --project mutakakkukasa",
+    "firebase:deploy": "firebase deploy --project mutakakkukasa",
+    "firebase:sync-hosting": "node scripts/sync-hosting.cjs",
+    "firebase:hosting": "npm run firebase:sync-hosting && firebase deploy --only hosting --project mutakakkukasa",
+    "firebase:functions": "firebase deploy --only functions --project mutakakkukasa",
+    "whatsapp:setup": "node scripts/setup-whatsapp.cjs",
+    "firebase:finish": "node scripts/finish-rtdb.cjs"
   },
   "devDependencies": {
     "firebase-tools": "^15.35.0"

@@ -17,6 +17,16 @@
     </header>
 
     <main class="grid">
+      <section class="card card-wide" id="identity-section" aria-labelledby="kuka-otsikko">
+        <h2 id="kuka-otsikko">Kuka olet?</h2>
+        <p class="hint block" id="identity-hint">Valitse Aapo tai Jaakko.</p>
+        <label class="field field--identity">
+          <span>Käyttäjä nyt</span>
+          <select id="active-user-index" aria-describedby="role-hint"></select>
+        </label>
+        <p class="preview" id="role-hint" hidden></p>
+      </section>
+
       <section class="card card-wide" id="settings-section" aria-labelledby="asetukset-otsikko">
         <h2 id="asetukset-otsikko">Asetukset</h2>
         <div class="settings-grid settings-grid--two">
@@ -58,16 +68,6 @@
           </fieldset>
 
           <fieldset class="fieldset">
-            <legend>Kuka olet?</legend>
-            <p class="hint block"><strong>iPhone (iOS)</strong> → Joni automaattisesti. <strong>Android</strong> (Aapo &amp; Jaakko): valitse listasta tai kirjanmerkki <code class="inline-code">?kuka=aapo</code> / <code class="inline-code">?kuka=jaakko</code>. Joni voi vain lisätä.</p>
-            <label class="field">
-              <span>Käyttäjä nyt</span>
-              <select id="active-user-index"></select>
-            </label>
-            <p class="preview" id="role-hint" hidden></p>
-          </fieldset>
-
-          <fieldset class="fieldset">
             <legend>Kuka voi wolttaa?</legend>
             <p class="hint block">Ei kaikki pakosti — valitse ketkä voivat lyhentää velkaa.</p>
             <div class="woltta-flags" id="woltta-flags"></div>
@@ -85,18 +85,25 @@
           <p class="total-badge" id="total-receivable" hidden></p>
         </div>
 
-        <dl class="stats shared-debt">
-          <div class="stat-highlight">
-            <dt>Yhteensä (sentti / cm)</dt>
-            <dd class="shared-input-wrap">
-              <input type="number" id="shared-debt-cm" class="shared-debt-input" step="0.1" min="0" readonly aria-label="Yhteinen velka cm" />
-            </dd>
-          </div>
-          <div>
-            <dt>Mutakakkuja</dt>
-            <dd id="stat-shared-packages" class="scaled-text">—</dd>
-          </div>
-        </dl>
+        <div class="debt-overview">
+          <dl class="stats shared-debt">
+            <div class="stat-highlight">
+              <dt>Yhteensä (sentti / cm)</dt>
+              <dd class="shared-input-wrap">
+                <input type="number" id="shared-debt-cm" class="shared-debt-input" step="0.1" min="0" readonly aria-label="Yhteinen velka cm" />
+              </dd>
+            </div>
+            <div>
+              <dt>Mutakakkuja</dt>
+              <dd id="stat-shared-packages" class="scaled-text">—</dd>
+            </div>
+          </dl>
+          <figure class="cake-pile-scene" aria-label="Mutakakkupino">
+            <figcaption class="cake-pile-caption">Kasa</figcaption>
+            <div class="cake-pile-platform" aria-hidden="true"></div>
+            <div class="cake-pile cake-pile--debt" id="debt-cake-pile"></div>
+          </figure>
+        </div>
         <table class="ingredients flavor-table">
           <thead>
             <tr>
@@ -122,32 +129,7 @@
         </div>
       </section>
 
-      <section class="card" aria-labelledby="mitta-otsikko">
-        <h2 id="mitta-otsikko">Mittauslaskuri</h2>
-        <p class="hint block">Valitse maku kirjausta varten.</p>
-        <div class="flavor-modes" role="group" aria-label="Kakkumaku">
-          <button type="button" class="flavor-option is-selected" data-flavor-option="perus">Perus</button>
-          <button type="button" class="flavor-option" data-flavor-option="minttu">Minttu</button>
-          <button type="button" class="flavor-option" data-flavor-option="appelsiini">Appelsiini</button>
-        </div>
-        <p class="hint block">Yksi painallus = yksi paketti (2,5 cm). Korkeus ÷ 2,5 = pakettimäärä.</p>
-        <label class="field">
-          <span>Pinon korkeus (sentti, cm)</span>
-          <input type="number" id="stack-height" min="0" step="0.1" value="0" />
-        </label>
-        <div class="actions actions--tight">
-          <button type="button" class="btn primary" id="btn-add-package">+ 1 paketti (2,5 cm)</button>
-          <button type="button" class="btn ghost" id="btn-clear-stack">Tyhjennä pino</button>
-        </div>
-        <dl class="stats compact">
-          <div class="stat-highlight">
-            <dt>Paketteja</dt>
-            <dd id="stat-packages">—</dd>
-          </div>
-        </dl>
-      </section>
-
-      <section class="card" aria-labelledby="tapahtuma-otsikko">
+      <section class="card card-wide" id="tx-section" aria-labelledby="tapahtuma-otsikko">
         <h2 id="tapahtuma-otsikko">Kirjaa tapahtuma</h2>
 
         <p class="hint block">Kakkumaku tälle kirjaukselle:</p>
@@ -169,10 +151,15 @@
         </div>
 
         <div id="tx-panel-add">
+          <p class="hint block">1 paketti = 2,5 cm. Korkeus ÷ 2,5 = pakettimäärä.</p>
           <label class="field">
             <span>Lisättävä velka (sentti, cm)</span>
-            <input type="number" id="tx-add-cm" step="0.1" min="0.1" placeholder="esim. 10" />
+            <input type="number" id="tx-add-cm" step="0.1" min="0.1" placeholder="esim. 7,5" />
           </label>
+          <div class="actions actions--tight">
+            <button type="button" class="btn ghost" id="btn-tx-add-package">+ 1 paketti (2,5 cm)</button>
+          </div>
+          <p class="preview" id="tx-add-packages" aria-live="polite">—</p>
           <p class="hint">Kasvattaa yhteistä velkaa (esim. uusi pino kasaan).</p>
         </div>
 

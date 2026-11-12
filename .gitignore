@@ -2,3 +2,8 @@
 Thumbs.db
 *.log
 node_modules/
+hosting/
+.firebase/
+functions/.env
+functions/.env.*
+!functions/.env.*.example

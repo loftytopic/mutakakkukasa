@@ -1,28 +1,19 @@
-﻿# Mutakakkukasa — Firebase Realtime Database (kerran ajettava)
+﻿# Mutakakkukasa — Firebase (kerran / kun tarvitaan)
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 
-Write-Host "1) Kirjaudu (selain aukeaa)…"
-npx firebase-tools@13.29.0 login
-
-Write-Host "2) Luo projekti (jos ei ole)…"
-npx firebase-tools@13.29.0 projects:create mutakakkukasa --display-name "Mutakakkukasa"
-
-Write-Host "3) Avaa Realtime Database konsolissa:"
-Write-Host "   https://console.firebase.google.com/project/mutakakkukasa/database"
-Write-Host "   Luo tietokanta (europe-west1). Testimoodi riittää alkuun."
-
-Write-Host "4) Rekisteröi Web-sovellus (jos ei ole)…"
-npx firebase-tools@13.29.0 apps:create WEB mutakakkukasa-web --project mutakakkukasa 2>$null
-
-Write-Host "5) Kirjoita firebase-config.js …"
-npx firebase-tools@13.29.0 apps:sdkconfig WEB --project mutakakkukasa --json |
-  node scripts/write-firebase-config.mjs |
-  Set-Content -Encoding utf8 firebase-config.js
-
-Write-Host "6) Julkaise tietokantasäännöt…"
-npx firebase-tools@13.29.0 deploy --only database --project mutakakkukasa
-
+Write-Host "Realtime Database (kerran käsin, europe-west1):"
+Write-Host "  https://console.firebase.google.com/project/mutakakkukasa/database"
 Write-Host ""
-Write-Host "Valmis. Kopioi FIREBASE_ROOM_ID kavereille (sama kaikilla)."
-Get-Content firebase-config.js | Select-String "FIREBASE_ROOM_ID"
+Write-Host "Kun tietokanta on luotu, aja projektikansiossa:"
+Write-Host "  npm run firebase:finish"
+Write-Host ""
+Write-Host "Julkaise app (hosting):"
+Write-Host "  npm run firebase:hosting"
+Write-Host ""
+Write-Host "WhatsApp-ryhma (vaatii Blaze + Green API tai Make-webhook):"
+Write-Host "  cd functions && npm install && cd .."
+Write-Host "  firebase functions:config:set whatsapp.chat_id=RYHMA_ID whatsapp.green_instance=... whatsapp.green_token=..."
+Write-Host "  npm run firebase:functions"
+Write-Host ""
+Write-Host "Sovellus: https://mutakakkukasa.web.app"

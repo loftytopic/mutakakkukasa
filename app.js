@@ -2,7 +2,8 @@ const PACKAGE_HEIGHT_CM = 2.5;
 const MIN_DEBT_AFTER_HUB_WOLTTA_CM = 0.1;
 const USER_COUNT = 3;
 const STORAGE_KEY = "mutakakkukasa-v3";
-const ADD_ONLY_NAMES = new Set(["joni"]);
+/** Joni: vain katselu — ei kirjauksia. */
+const VIEW_ONLY_NAMES = new Set(["joni"]);
 const DEBT_FRIEND_NAME = "joni";
 const DELIVERY_ADDRESS_EDITORS = new Set(["aapo", "jaakko"]);
 const FLAVORS = [
@@ -25,18 +26,19 @@ const NUTRITION_PER_100G = {
   saltG: 0.45,
 };
 const DEFAULT_GRAMS_PER_PACKAGE = 100;
+const CAKE_PILE_MAX_SLABS = 36;
 
 const defaultFlavorCm = () => ({ perus: 0, minttu: 0, appelsiini: 0 });
 
 const defaultState = () => ({
   names: ["Aapo", "Joni", "Jaakko"],
   debtFriendIndex: 0,
-  activeUserIndex: 1,
+  activeUserIndex: 0,
   sharedDebtCm: 0,
   flavorCm: defaultFlavorCm(),
   wolttaLog: [],
   deliveryAddress: "",
-  canWoltta: [true, true, false],
+  canWoltta: [true, false, true],
   gramsPerPackage: DEFAULT_GRAMS_PER_PACKAGE,
 });
 
@@ -119,9 +121,10 @@ function normalizeState(parsed) {
   if (!Array.isArray(canWoltta)) {
     canWoltta = defaultState().canWoltta;
   }
-  canWoltta = [0, 1, 2].map((i) => Boolean(canWoltta[i]));
-
   const names = (parsed.names ?? defaultState().names).slice(0, USER_COUNT);
+  canWoltta = [0, 1, 2].map((i) => Boolean(canWoltta[i]));
+  const hub = indexOfDebtFriend(names);
+  if (hub >= 0) canWoltta[hub] = false;
   const flavorCm = normalizeFlavorCm(parsed.flavorCm, sharedDebtCm);
   const sharedFromFlavors = totalDebtCm(flavorCm);
 
@@ -158,14 +161,36 @@ function isIOS() {
   return navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
 }
 
+/** macOS-selain (ei iPad/iPhone). Joni käyttää MacBookia. */
+function isMacOS() {
+  if (isIOS()) return false;
+  const ua = navigator.userAgent;
+  return /Macintosh|Mac OS X/i.test(ua) || navigator.platform === "MacIntel";
+}
+
+/** iPhone / iPad / MacBook → aina Joni, ellei URL ?kuka=aapo|jaakko */
+function isJoniLockedDevice() {
+  return isIOS() || isMacOS();
+}
+
 function isAndroid() {
   return /Android/i.test(navigator.userAgent);
 }
 
-/** Kirjanmerkki ?kuka=aapo — voittaa laitetunnistuksen. */
-function applyUserFromUrl() {
+function readUserUrlParam() {
   const params = new URLSearchParams(window.location.search);
-  const raw = params.get("kuka") ?? params.get("user");
+  return params.get("kuka") ?? params.get("user");
+}
+
+function hasUserUrlOverride() {
+  const raw = readUserUrlParam();
+  if (!raw) return false;
+  return indexOfUserByName(raw) >= 0;
+}
+
+/** Kirjanmerkki ?kuka=aapo — voittaa laitetunnistuksen (esim. MacBookilla Jaakko). */
+function applyUserFromUrl() {
+  const raw = readUserUrlParam();
   if (!raw) return false;
   const idx = indexOfUserByName(raw);
   if (idx < 0) return false;
@@ -173,9 +198,9 @@ function applyUserFromUrl() {
   return true;
 }
 
-/** Joni = ainoa iOS-käyttäjä; Androidilla Aapo/Jaakko erotellaan muulla tavalla. */
+/** Joni: iOS + MacBook. Android: Aapo/Jaakko valitsevat itse. */
 function applyUserFromDevice() {
-  if (!isIOS()) return false;
+  if (!isJoniLockedDevice()) return false;
   const idx = indexOfUserByName("joni");
   if (idx < 0) return false;
   state.activeUserIndex = idx;
@@ -220,7 +245,6 @@ function refreshUiFromState() {
   syncInputsFromState();
   renderSharedDebt();
   renderWolttaLog();
-  renderMeasurement();
 }
 
 function setSyncStatus(mode, detail = "") {
@@ -237,6 +261,19 @@ function setSyncStatus(mode, detail = "") {
   } else {
     el.textContent = `Synkronointi: ${detail || "…"}`;
   }
+}
+
+function enqueueWhatsAppNotify(payload) {
+  if (!firebaseReady || !isFirebaseConfigured() || applyingRemote) return;
+  const roomId = window.FIREBASE_ROOM_ID || "mutakakkukasa";
+  firebase
+    .database()
+    .ref(`rooms/${roomId}/notifyQueue`)
+    .push({
+      ...payload,
+      at: Date.now(),
+    })
+    .catch(() => {});
 }
 
 function saveState() {
@@ -312,12 +349,11 @@ const els = {
   nutritionBody: document.getElementById("nutrition-body"),
   nutritionSub: document.getElementById("nutrition-sub"),
   gramsPerPackage: document.getElementById("grams-per-package"),
+  debtCakePile: document.getElementById("debt-cake-pile"),
   statSharedPackages: document.getElementById("stat-shared-packages"),
-  stackHeight: document.getElementById("stack-height"),
-  statPackages: document.getElementById("stat-packages"),
-  btnAddPackage: document.getElementById("btn-add-package"),
-  btnClearStack: document.getElementById("btn-clear-stack"),
   txAddCm: document.getElementById("tx-add-cm"),
+  txAddPackages: document.getElementById("tx-add-packages"),
+  btnTxAddPackage: document.getElementById("btn-tx-add-package"),
   txWolttaUser: document.getElementById("tx-woltta-user"),
   txWolttaCm: document.getElementById("tx-woltta-cm"),
   txPanelAdd: document.getElementById("tx-panel-add"),
@@ -332,7 +368,10 @@ const els = {
   btnReset: document.getElementById("btn-reset"),
   activeUserIndex: document.getElementById("active-user-index"),
   roleHint: document.getElementById("role-hint"),
+  identitySection: document.getElementById("identity-section"),
+  identityField: document.querySelector(".field--identity"),
   settingsSection: document.getElementById("settings-section"),
+  txSection: document.getElementById("tx-section"),
   txModeWolttaWrap: document.getElementById("tx-mode-woltta-wrap"),
   errorMessage: document.getElementById("error-message"),
 };
@@ -364,6 +403,61 @@ function formatPackages(n) {
 function formatGrams(g) {
   const rounded = Math.round(g * 10) / 10;
   return `${formatNumber(rounded, rounded % 1 ? 1 : 0)} g`;
+}
+
+function pileHash(n) {
+  return ((n * 1103515245 + 12345) >>> 0) / 0xffffffff;
+}
+
+function renderCakePile(container, packages, { flavor = null } = {}) {
+  if (!container) return;
+
+  const count = Number.isFinite(packages) && packages > 0 ? packages : 0;
+  const prev = Number.parseFloat(container.dataset.packages || "0");
+  container.dataset.packages = String(count);
+
+  const scene = container.closest(".cake-pile-scene");
+  if (scene) {
+    scene.classList.toggle("is-empty", count === 0);
+    if (count > prev) {
+      scene.classList.remove("cake-pile-scene--pulse");
+      void scene.offsetWidth;
+      scene.classList.add("cake-pile-scene--pulse");
+    }
+  }
+
+  container.replaceChildren();
+  if (count === 0) return;
+
+  const slabs = Math.min(Math.ceil(count), CAKE_PILE_MAX_SLABS);
+  const over = count - CAKE_PILE_MAX_SLABS;
+
+  for (let i = 0; i < slabs; i++) {
+    const slab = document.createElement("div");
+    slab.className = "cake-slab";
+    if (flavor) slab.classList.add(`cake-slab--flavor-${flavor}`);
+
+    const r1 = pileHash(i + 1);
+    const r2 = pileHash(i + 17);
+    slab.style.setProperty("--shift", `${(r1 - 0.5) * 14}px`);
+    slab.style.setProperty("--tilt", `${(r2 - 0.5) * 5}deg`);
+    slab.style.setProperty("--width", `${84 + r1 * 14}%`);
+    slab.style.setProperty("--mud", `${22 + (r2 * 14) | 0}%`);
+
+    if (i === slabs - 1 && count % 1 > 0.05) {
+      const partial = count - Math.floor(count);
+      slab.style.setProperty("--partial", String(Math.max(0.25, partial)));
+    }
+
+    container.appendChild(slab);
+  }
+
+  if (over > 0) {
+    const more = document.createElement("p");
+    more.className = "cake-pile-more";
+    more.textContent = `+${formatPackages(over)}`;
+    container.appendChild(more);
+  }
 }
 
 function totalDebtGrams() {
@@ -473,28 +567,43 @@ function activeUserName() {
   return (state.names[state.activeUserIndex] ?? "").trim();
 }
 
-function isAddOnlyUser() {
-  return ADD_ONLY_NAMES.has(activeUserName().toLowerCase());
+function isViewOnlyUser() {
+  return VIEW_ONLY_NAMES.has(activeUserName().toLowerCase());
 }
 
 function canEditDeliveryAddress() {
   return DELIVERY_ADDRESS_EDITORS.has(activeUserName().toLowerCase());
 }
 
-function applyAddOnlyUi() {
-  const on = isAddOnlyUser();
+function applyRoleUi() {
+  const on = isViewOnlyUser();
   const canEditAddress = canEditDeliveryAddress();
 
-  els.btnClearStack.hidden = on;
   els.btnReset.hidden = on;
   els.sharedDebtCm.readOnly = true;
-  els.stackHeight.readOnly = on;
   if (els.txModeWolttaWrap) els.txModeWolttaWrap.hidden = on;
+  if (els.txSection) els.txSection.classList.toggle("hidden", on);
 
   els.deliveryAddress.readOnly = !canEditAddress;
   els.deliveryAddress.classList.toggle("is-locked", !canEditAddress);
 
-  if (els.settingsSection) els.settingsSection.classList.toggle("hidden", on);
+  const joniDevice = isJoniLockedDevice();
+  const urlOverride = hasUserUrlOverride();
+  const joniLocked = joniDevice && on && !urlOverride;
+  const hideSettings = joniLocked;
+  if (els.settingsSection) els.settingsSection.classList.toggle("hidden", hideSettings);
+  if (els.identityField) els.identityField.classList.toggle("hidden", joniLocked);
+  const hint = document.getElementById("identity-hint");
+  if (hint) {
+    if (joniLocked) {
+      hint.textContent = `Olet ${activeUserName()} (iPhone tai Mac). Vain katselu — ei lisäystä, ei wolttaa (tilausta).`;
+    } else if (joniDevice && urlOverride && !on) {
+      hint.textContent = `Kirjanmerkki: ${activeUserName()}. Vain tämä rooli MacBookilla — Joni käyttää linkkiä ilman parametria.`;
+    } else {
+      hint.textContent =
+        "Valitse Aapo tai Jaakko. Kirjanmerkit: ?kuka=aapo / ?kuka=jaakko (tarvitaan MacBookilla).";
+    }
+  }
 
   if (on) {
     els.roleHint.hidden = true;
@@ -537,6 +646,29 @@ function fillSelect(select, options, selectedIndex) {
       opt.value = String(i);
       opt.textContent = label;
       if (i === selectedIndex) opt.selected = true;
+      return opt;
+    })
+  );
+}
+
+function activeUserSelectIndices() {
+  return [0, 1, 2].filter((i) => !VIEW_ONLY_NAMES.has(state.names[i].trim().toLowerCase()));
+}
+
+function fillActiveUserSelect() {
+  const indices = activeUserSelectIndices();
+  const selected = indices.includes(state.activeUserIndex)
+    ? state.activeUserIndex
+  : indices[0];
+  if (!indices.includes(state.activeUserIndex) && indices.length) {
+    state.activeUserIndex = selected;
+  }
+  els.activeUserIndex.replaceChildren(
+    ...indices.map((i) => {
+      const opt = document.createElement("option");
+      opt.value = String(i);
+      opt.textContent = state.names[i] ?? `Kaveri ${i + 1}`;
+      if (i === selected) opt.selected = true;
       return opt;
     })
   );
@@ -652,14 +784,14 @@ function syncInputsFromState() {
   els.deliveryAddress.value = state.deliveryAddress;
   if (els.gramsPerPackage) {
     els.gramsPerPackage.value = String(state.gramsPerPackage);
-    els.gramsPerPackage.readOnly = isAddOnlyUser();
+    els.gramsPerPackage.readOnly = isViewOnlyUser();
   }
   fillDebtFriendSelect();
-  fillSelect(els.activeUserIndex, state.names, state.activeUserIndex);
+  fillActiveUserSelect();
   renderWolttaFlags();
   fillWolttaUserSelect();
   renderDeliveryAddress();
-  applyAddOnlyUi();
+  applyRoleUi();
 }
 
 function renderSharedDebt() {
@@ -676,7 +808,7 @@ function renderSharedDebt() {
   els.statSharedPackages.textContent = formatPackages(packs);
 
   if (els.flavorDebtBody) {
-    const readonly = isAddOnlyUser();
+    const readonly = isViewOnlyUser();
     els.flavorDebtBody.replaceChildren(
       ...FLAVORS.map(({ id, label }) => {
         const cm = state.flavorCm[id] ?? 0;
@@ -723,6 +855,9 @@ function renderSharedDebt() {
   }
 
   renderNutrition();
+
+  const debtPacks = packagesFromCm(state.sharedDebtCm);
+  renderCakePile(els.debtCakePile, debtPacks ?? 0);
 }
 
 function renderWolttaLog() {
@@ -747,30 +882,26 @@ function renderWolttaLog() {
   );
 }
 
-function currentStackCm() {
-  const cm = parseCm(els.stackHeight.value);
+function currentTxAddCm() {
+  const cm = parseCm(els.txAddCm.value);
   return cm !== null && cm >= 0 ? cm : 0;
 }
 
-function setStackCm(cm) {
-  const rounded = Math.round(Math.max(0, cm) * 100) / 100;
-  els.stackHeight.value = String(rounded);
-  renderMeasurement();
+function renderTxAddPackages() {
+  if (!els.txAddPackages) return;
+  const cm = parseCm(els.txAddCm.value);
+  if (cm === null || cm <= 0) {
+    els.txAddPackages.textContent = "—";
+    return;
+  }
+  els.txAddPackages.textContent = `≈ ${formatPackages(packagesFromCm(cm))}`;
 }
 
-function renderMeasurement() {
-  const cm = currentStackCm();
-  const packs = packagesFromCm(cm);
-  els.statPackages.textContent = formatPackages(packs);
-}
-
-function addOnePackageToStack() {
-  setStackCm(currentStackCm() + PACKAGE_HEIGHT_CM);
-}
-
-function clearStack() {
-  if (isAddOnlyUser()) return;
-  setStackCm(0);
+function addOnePackageToTxAdd() {
+  const next = currentTxAddCm() + PACKAGE_HEIGHT_CM;
+  const rounded = Math.round(next * 100) / 100;
+  els.txAddCm.value = String(rounded);
+  renderTxAddPackages();
 }
 
 function syncTxPanels() {
@@ -780,6 +911,8 @@ function syncTxPanels() {
   if (woltta) {
     renderDeliveryAddress();
     updateWolttaHint();
+  } else {
+    renderTxAddPackages();
   }
   setError("");
 }
@@ -816,8 +949,8 @@ function validateWoltta(whoIdx, woltta) {
 }
 
 function applyTransaction() {
-  if (isAddOnlyUser() && transactionMode() === "woltta") {
-    setError("Joni voi vain lisätä, ei wolttaa.");
+  if (isViewOnlyUser()) {
+    setError("Joni voi vain seurata velkaa — ei lisäystä eikä wolttaa.");
     return;
   }
 
@@ -831,7 +964,14 @@ function applyTransaction() {
     state.flavorCm[selectedFlavor] = (state.flavorCm[selectedFlavor] ?? 0) + add;
     syncSharedDebtFromFlavors();
     els.txAddCm.value = "";
+    renderTxAddPackages();
     saveState();
+    enqueueWhatsAppNotify({
+      type: "add",
+      actor: activeUserName(),
+      cm: add,
+      flavor: flavorLabel(selectedFlavor),
+    });
     renderSharedDebt();
     return;
   }
@@ -869,6 +1009,12 @@ function applyTransaction() {
 
   els.txWolttaCm.value = "";
   saveState();
+  enqueueWhatsAppNotify({
+    type: "woltta",
+    actor: state.names[whoIdx] ?? "—",
+    cm: woltta,
+    flavor: flavorLabel(selectedFlavor),
+  });
   renderSharedDebt();
   renderWolttaLog();
 
@@ -876,7 +1022,7 @@ function applyTransaction() {
 }
 
 function resetDebts() {
-  if (isAddOnlyUser()) {
+  if (isViewOnlyUser()) {
     setError("Joni ei voi tyhjentää velkaa.");
     return;
   }
@@ -895,12 +1041,12 @@ els.names.forEach((input, i) => {
     state.names[i] = name;
     saveState();
     fillDebtFriendSelect();
-    fillSelect(els.activeUserIndex, state.names, state.activeUserIndex);
+    fillActiveUserSelect();
     renderWolttaFlags();
     fillWolttaUserSelect();
     renderSharedDebt();
     renderWolttaLog();
-    applyAddOnlyUi();
+    applyRoleUi();
   });
 });
 
@@ -916,7 +1062,7 @@ els.activeUserIndex.addEventListener("change", () => {
   state.activeUserIndex = Number(els.activeUserIndex.value);
   saveState();
   setError("");
-  applyAddOnlyUi();
+  applyRoleUi();
 });
 
 els.deliveryAddress.addEventListener("change", () => {
@@ -938,7 +1084,7 @@ els.deliveryAddress.addEventListener("input", () => {
 
 if (els.gramsPerPackage) {
   els.gramsPerPackage.addEventListener("change", () => {
-    if (isAddOnlyUser()) return;
+    if (isViewOnlyUser()) return;
     const n = Number.parseFloat(String(els.gramsPerPackage.value).replace(",", "."));
     state.gramsPerPackage = Number.isFinite(n) && n > 0 ? n : DEFAULT_GRAMS_PER_PACKAGE;
     saveState();
@@ -956,14 +1102,19 @@ els.btnCopyAddress.addEventListener("click", () => {
   void copyDeliveryAddress();
 });
 
-els.stackHeight.addEventListener("input", renderMeasurement);
-els.btnAddPackage.addEventListener("click", addOnePackageToStack);
-els.btnClearStack.addEventListener("click", clearStack);
+els.txAddCm.addEventListener("input", renderTxAddPackages);
+if (els.btnTxAddPackage) {
+  els.btnTxAddPackage.addEventListener("click", addOnePackageToTxAdd);
+}
 els.btnApplyTx.addEventListener("click", applyTransaction);
 els.btnReset.addEventListener("click", resetDebts);
 
 const userSetFromUrl = applyUserFromUrl();
 const userSetFromDevice = !userSetFromUrl && applyUserFromDevice();
+if (!userSetFromUrl && !userSetFromDevice && !isJoniLockedDevice() && isViewOnlyUser()) {
+  const pick = activeUserSelectIndices();
+  if (pick.length) state.activeUserIndex = pick[0];
+}
 if (userSetFromUrl || userSetFromDevice) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
@@ -974,4 +1125,4 @@ syncInputsFromState();
 syncTxPanels();
 renderSharedDebt();
 renderWolttaLog();
-renderMeasurement();
+renderTxAddPackages();
