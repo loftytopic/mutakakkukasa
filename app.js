@@ -466,6 +466,26 @@ function totalDebtGrams() {
   return packs * state.gramsPerPackage;
 }
 
+function kcalFromCm(cm) {
+  const packs = packagesFromCm(cm);
+  if (packs === null || packs <= 0) return 0;
+  const grams = packs * state.gramsPerPackage;
+  const n = nutritionForGrams(grams);
+  return n ? Math.round(n.energyKcal) : 0;
+}
+
+function whatsAppNotifyExtras(txCm) {
+  const txPacks = packagesFromCm(txCm) ?? 0;
+  const totalPacks = packagesFromCm(state.sharedDebtCm) ?? 0;
+  return {
+    txPacks,
+    txKcal: kcalFromCm(txCm),
+    totalCm: state.sharedDebtCm,
+    totalPacks,
+    totalKcal: kcalFromCm(state.sharedDebtCm),
+  };
+}
+
 function nutritionForGrams(grams) {
   if (grams <= 0) return null;
   const factor = grams / 100;
@@ -971,6 +991,7 @@ function applyTransaction() {
       actor: activeUserName(),
       cm: add,
       flavor: flavorLabel(selectedFlavor),
+      ...whatsAppNotifyExtras(add),
     });
     renderSharedDebt();
     return;
@@ -1014,6 +1035,7 @@ function applyTransaction() {
     actor: state.names[whoIdx] ?? "—",
     cm: woltta,
     flavor: flavorLabel(selectedFlavor),
+    ...whatsAppNotifyExtras(woltta),
   });
   renderSharedDebt();
   renderWolttaLog();

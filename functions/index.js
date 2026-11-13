@@ -13,18 +13,55 @@ function readEnv() {
   };
 }
 
+function fmtCm(cm) {
+  const n = Number(cm);
+  if (!Number.isFinite(n)) return "—";
+  const rounded = Math.round(n * 100) / 100;
+  return `${rounded.toLocaleString("fi-FI", { maximumFractionDigits: rounded % 1 ? 1 : 0 })} cm`;
+}
+
+function fmtPacks(packs) {
+  const n = Number(packs);
+  if (!Number.isFinite(n)) return "— pkt";
+  const rounded = Math.round(n * 100) / 100;
+  const dec = rounded % 1 ? 1 : 0;
+  return `${rounded.toLocaleString("fi-FI", { minimumFractionDigits: dec, maximumFractionDigits: dec })} pkt`;
+}
+
+function fmtKcal(kcal) {
+  const n = Number(kcal);
+  if (!Number.isFinite(n)) return "— kcal";
+  return `${Math.round(n).toLocaleString("fi-FI")} kcal`;
+}
+
+function joniBalanceLine(data) {
+  const totalCm = fmtCm(data.totalCm);
+  const totalPacks = fmtPacks(data.totalPacks);
+  const totalKcal = fmtKcal(data.totalKcal);
+  return `🎯 Jonille kasassa: ${totalCm} · ${totalPacks} · ${totalKcal}`;
+}
+
 function formatMessage(data) {
   const actor = data.actor || "Joku";
-  const flavor = data.flavor ? ` (${data.flavor})` : "";
-  const cm = Number(data.cm);
-  const packs = Number.isFinite(cm)
-    ? ` ≈ ${(cm / 2.5).toLocaleString("fi-FI", { maximumFractionDigits: 2 })} pakettia`
-    : "";
+  const flavor = data.flavor ? ` · ${data.flavor}` : "";
+  const cm = fmtCm(data.cm);
+  const packs = fmtPacks(data.txPacks ?? data.cm / 2.5);
+  const txKcal = fmtKcal(data.txKcal);
+  const joni = joniBalanceLine(data);
+
   if (data.type === "add") {
-    return `🍫 Mutakakkukasa: ${actor} lisäsi ${cm} cm${flavor}${packs}.`;
+    return [
+      `🍫 ${actor} lisäsi velkaa`,
+      `➕ ${cm} · ${packs} · +${txKcal}${flavor}`,
+      joni,
+    ].join("\n");
   }
   if (data.type === "woltta") {
-    return `📦 Mutakakkukasa: ${actor} wolttaa ${cm} cm${flavor}${packs}.`;
+    return [
+      `📦 ${actor} wolttaa`,
+      `➖ ${cm} · ${packs} · −${txKcal}${flavor}`,
+      joni,
+    ].join("\n");
   }
   return `Mutakakkukasa: ${JSON.stringify(data)}`;
 }
